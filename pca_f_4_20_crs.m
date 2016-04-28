@@ -1,14 +1,13 @@
 function [finalE, finalx, fs, xs, is, end_iter_count] = pca_f_4_20_crs( weightmat, numneur, output, numcycles, threshold, replimit, numtest,plotonot,testname,mattype,data_dir)
-%Rand function. Somewhat based on stimrnn7_31. Breaks for 50 repetitions of
-%same best solution. within cycle checks best step.
-%Cindy Steinhardt
-%based on stimrnn7_31
-%with output figures of error over time and output values as well as neuron activations
-% taking random input from calling script
+%Function that uses the output of a neural network (weightmat*input) and learns on error between produced and desired
+%outputs to find a best solution (local minimum in error). In this algorithm principle components are generated
+%where are used as bases from which to create new potential inputs to test iteratively until the iteration limit is reached
+% ~Cindy Steinhardt
 
-%% Initialize our functions
+%% Initialize our functions (output of network and error function
 trans = @(x) x*weightmat;
 err_f = @(x,y) mean((repmat(x, [size(y, 1) 1]) - y).^2, 2);
+%limits for generating principle components
 samples = 100;
 cutoff = 2;
 potential_comp = cutoff*(2*rand(samples, numneur)-1);
@@ -23,15 +22,9 @@ end
 max_dim = round([1:replimit(2)]./replimit(2)*numneur);
 pcomps = pcomps(:,1:max(max_dim));% change ideally to num (ones with latent over 1)!
 
-% if numneur > replimit(2),
-% pcomps = pcomps(:,1:replimit(2));
-% else
-%     pcomps = pcomps(:,1:numneur);% change ideally to num (ones with latent over 1)!
-% end
-
 
 %% Simulated Annealing
-
+%process used to iteratively cool and approach a local minimum
 cutoff = 2;
 % Number of accepted solutions
 na = 0.0;
@@ -75,11 +68,12 @@ for cur_test = 1:numtest,
                 cur_dim_range = max_dim(cur_num_dim);
                 
                 %Sample around our current step
+                %uses normalized vectors and cools by cur_run_frac (cooling factor) when adding bases to former best input vector found
                 step_x = cutoff*repmat(cur_run_frac(1:cur_dim_range), [replimit(3) 1]).*(2*rand(replimit(3), cur_dim_range) - 1);
                 step_x = step_x*pcomps(1:cur_dim_range,:);            
                 temp_x = repmat(run_xs(cur_run, :), [replimit(3) 1]) + step_x;
                 temp_x(temp_x < -10) = -10; temp_x(temp_x > 10) = 10; 
-    
+                %error comparision out of 10 potential inputs to choose from
                 temp_err = err_f(desired_output, trans(temp_x));
                 [min_err, min_ind] = min(temp_err);
                 iter_count = iter_count + replimit(3); %Update our iteration count
@@ -108,9 +102,9 @@ for cur_test = 1:numtest,
         end
         
         %Check to see if we reached our minimum error
-%         if cur_fs(end) <= threshold,
-%             stop = 1;
-%         end
+         if cur_fs(end) <= threshold,
+             stop = 1;
+         end
         
         %Check to see if our iteration count is beyond our limit
       
@@ -120,7 +114,7 @@ for cur_test = 1:numtest,
         frac(frac <= 0.1) = 0.1;
         
     end %iteration loop
-    
+    %updatas final outputs of system for later statistical comparison
     end_iter_count(cur_test) = iter_count;
     finalE(cur_test) = cur_fs(end);
     finalx(cur_test, :) = cur_xs(end, :);
@@ -131,32 +125,30 @@ for cur_test = 1:numtest,
 end %test loop
 
 if plotonot,
-% figure(1); cla;
-% for i = 1:numtest,
-%     plot(is{i}, fs{i}, '-'); hold all;
-% end
-% v = axis;
-% for i = 1:numtest,
-%     if end_iter_count(i) < numcycles,
-%         plot(end_iter_count(i)*[1 1], v(3:4), 'k-');
-%     else
-%         plot(is{i}(end), fs{i}(end), 'k*', 'MarkerSize', 20);
-%     end
-% end
-% xlabel('Iteration Count'); ylabel('Error');
-% title('PCA Subspaces');
-%saveas(gcf, sprintf('pca_%d_learning.fig', numneur));
+ figure(1); cla;
+ %plots needed number of iterations to reach a best input or error below 10^-3
+ for i = 1:numtest,
+     plot(is{i}, fs{i}, '-'); hold all;
+ end
+ v = axis;
+ for i = 1:numtest,
+     if end_iter_count(i) < numcycles,
+         plot(end_iter_count(i)*[1 1], v(3:4), 'k-');
+     else
+         plot(is{i}(end), fs{i}(end), 'k*', 'MarkerSize', 20);
+     end
+ end
+ xlabel('Iteration Count'); ylabel('Error');
+ title('PCA Subspaces');
+saveas(gcf, sprintf('pca_%d_learning.fig', numneur));
 
-pltfig = figure(1);
+pltfig = figure(2);
 [~, best_err] = min(finalE);
 %clim = get(gca, 'CLim');
 subplot(2,2,1); imagesc(reshape(trans(finalx(best_err, :)), [sqrt(numneur) sqrt(numneur)])); title('PCA - System Output'); %set(gca, 'CLim', [0 20]); %imagesc(reshape(output,[12 12]));
 subplot(2,2,2); imagesc(reshape(desired_output, [sqrt(numneur) sqrt(numneur)])); title('Desired Output'); %set(gca, 'CLim', [0 20]); %imagesc(reshape(output,[12 12]));
 subplot(2,2,3); imagesc(reshape(desired_output - trans(finalx(best_err, :)), [sqrt(numneur) sqrt(numneur)])); title('PCA - Difference');%imagesc(reshape(output,[12 12]));
-%set(gca, 'CLim', clim);
-subplot(2,2,4); imagesc(reshape(desired_output - trans(finalx(best_err, :)), [sqrt(numneur) sqrt(numneur)])); colorbar; title('PCA - Difference');%imagesc(reshape(output,[12 12]));
-%saveas(gcf, sprintf('dct_%d_perf.fig', numneur));
-%saveas(gcf, sprintf('pca_%d_perf.fig', numneur));
+subplot(2,2,4); imagesc(reshape(desired_output - trans(finalx(best_err, :)), [sqrt(numneur) sqrt(numneur)])); colorbar; title('PCA - Difference');%imagesc(reshape(output,[12 12]));%saveas(gcf, sprintf('dct_%d_perf.fig', numneur));
 
 drawnow;
 end
